@@ -1,0 +1,56 @@
+name: pulso-local
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: pulso
+      POSTGRES_PASSWORD: pulso-local-only
+      POSTGRES_DB: pulso
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U pulso -d pulso']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  api:
+    build: ../backend
+    environment: &backend_env
+      DATABASE_URL: postgresql+psycopg://pulso:pulso-local-only@db:5432/pulso
+      ENVIRONMENT: development
+      APP_URL: http://localhost:${WEB_PORT:-8080}
+      SECRET_KEY: local-development-secret-do-not-deploy
+      DEV_AUTO_VERIFY_EMAIL: 'true'
+      DEV_OUTBOX_ENABLED: 'true'
+      DEV_OUTBOX_PATH: /app/data/dev-outbox.jsonl
+      COOKIE_SECURE: 'false'
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_CHAT_MODEL: ${GROQ_CHAT_MODEL:-llama-3.3-70b-versatile}
+    volumes:
+      - app_data:/app/data
+    depends_on:
+      db: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  scheduler:
+    build: ../backend
+    command: [python, -m, app.scheduler, run]
+    environment: *backend_env
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+  web:
+    build: ../frontend
+    ports:
+      - '127.0.0.1:${WEB_PORT:-8080}:8080'
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+volumes:
+  postgres_data:
+  app_data:

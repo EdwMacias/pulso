@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: pulso
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD}
+      POSTGRES_DB: pulso
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U pulso -d pulso']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  api:
+    build:
+      context: ../backend
+    environment: &backend_env
+      DATABASE_URL: ${DATABASE_URL:?Define DATABASE_URL with URL-encoded PostgreSQL password}
+      SECRET_KEY: ${SECRET_KEY:?Define a random SECRET_KEY of at least 32 characters}
+      ENVIRONMENT: production
+      APP_URL: ${APP_URL:?Define APP_URL as https://your-domain}
+      COOKIE_SECURE: 'true'
+      DEV_AUTO_VERIFY_EMAIL: 'false'
+      DEV_OUTBOX_ENABLED: 'false'
+      CORS_ORIGINS: ${APP_URL:?Define APP_URL as https://your-domain}
+      SMTP_HOST: ${SMTP_HOST:?Define SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:?Define SMTP_FROM}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_CHAT_MODEL: ${GROQ_CHAT_MODEL:-llama-3.3-70b-versatile}
+    depends_on:
+      db: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  scheduler:
+    build:
+      context: ../backend
+    command: [python, -m, app.scheduler, run]
+    environment: *backend_env
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+  web:
+    build:
+      context: ../frontend
+    expose: ['8080']
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+volumes:
+  postgres_data:

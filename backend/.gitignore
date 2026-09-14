@@ -1,0 +1,8 @@
+.env
+.venv/
+*.db
+*.sqlite3
+__pycache__/
+.pytest_cache/
+dev-outbox.jsonl
+
