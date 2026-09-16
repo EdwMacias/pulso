@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     @field_validator("whatsapp_api_url")
     @classmethod
     def valid_whatsapp_api_url(cls, value: str | None) -> str | None:
-        if value is None:
+        if not value:
             return None
         value = value.rstrip("/")
         if not value.startswith(("http://", "https://")):
@@ -68,7 +68,9 @@ class Settings(BaseSettings):
     @field_validator("whatsapp_webhook_secret")
     @classmethod
     def secure_whatsapp_webhook_secret(cls, value: str | None) -> str | None:
-        if value is not None and len(value) < 32:
+        if not value:
+            return None
+        if len(value) < 32:
             raise ValueError("WHATSAPP_WEBHOOK_SECRET must be at least 32 characters")
         return value
 

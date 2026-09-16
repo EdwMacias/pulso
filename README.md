@@ -28,9 +28,16 @@ El frontend, backend y scheduler se construyen desde este repositorio; PostgreSQ
 - Scheduler independiente y persistencia de avisos internos, incluso con el navegador cerrado.
 - Estadísticas básicas de tareas guardadas y preferencias de zona horaria.
 - Chat Groq configurable con herramientas para consultar/crear tareas y programar avisos; sin clave muestra un estado de configuración pendiente.
+- Vinculación verificada de un teléfono y conversación de texto entrante por
+  Evolution API 2.3.7; Pulso solo responde cuando el usuario vinculado escribe
+  primero.
 - Interfaz responsive en español y despliegue del frontend/API bajo el mismo origen.
 
-**Todavía pendiente:** envío y recepción por WhatsApp/Evolution, vinculación del número, STT/TTS, reproducción de voz, análisis CSV/Excel, Redis/Celery, migraciones de evolución de esquema y endurecimiento operativo completo. Un aviso interno guardado no representa una entrega por WhatsApp. Los proveedores externos no se han probado con credenciales reales.
+**Todavía pendiente:** recordatorios salientes por WhatsApp, multimedia y voz
+STT/TTS, reproducción de voz, análisis CSV/Excel, Redis/Celery, migraciones de
+evolución de esquema y endurecimiento operativo completo. Un aviso interno
+guardado no representa una entrega por WhatsApp. Los proveedores externos no se
+han probado con credenciales reales.
 
 ## Groq
 
@@ -39,6 +46,10 @@ Configura `GROQ_API_KEY` en el entorno del servicio API, nunca en Vue. Para Comp
 ## Dokploy
 
 Usa [infra/compose.dokploy.yaml](infra/compose.dokploy.yaml). Las instrucciones de dominio, SMTP, variables y respaldo están en [docs/dokploy.md](docs/dokploy.md).
+
+La configuración de Evolution API, el webhook `MESSAGES_UPSERT` y el worker de
+WhatsApp también están documentados allí. Las claves permanecen exclusivamente
+en el backend.
 
 ## Desarrollo y pruebas
 

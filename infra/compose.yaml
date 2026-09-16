@@ -27,6 +27,11 @@ services:
       COOKIE_SECURE: 'false'
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_CHAT_MODEL: ${GROQ_CHAT_MODEL:-llama-3.3-70b-versatile}
+      WHATSAPP_API_URL: ${WHATSAPP_API_URL:-}
+      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY:-}
+      WHATSAPP_INSTANCE: ${WHATSAPP_INSTANCE:-}
+      WHATSAPP_WEBHOOK_SECRET: ${WHATSAPP_WEBHOOK_SECRET:-}
+      WHATSAPP_WORKER_POLL_SECONDS: ${WHATSAPP_WORKER_POLL_SECONDS:-2}
     volumes:
       - app_data:/app/data
     depends_on:
@@ -40,6 +45,14 @@ services:
   scheduler:
     build: ../backend
     command: [python, -m, app.scheduler, run]
+    environment: *backend_env
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+  whatsapp-worker:
+    profiles: [whatsapp]
+    build: ../backend
+    command: [python, -m, app.whatsapp_worker, run]
     environment: *backend_env
     depends_on:
       api: { condition: service_healthy }
