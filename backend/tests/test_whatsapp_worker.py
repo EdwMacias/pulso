@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 
 class FakeSender:
     def __init__(self, error=None):
@@ -231,3 +233,59 @@ def test_claimed_old_event_is_not_immediately_claimed_by_another_worker(client):
 
     with session_scope() as second_worker:
         assert _claim_event(second_worker) is None
+
+
+def test_worker_records_sending_before_calling_evolution(client, registered, monkeypatch):
+    from app.database import session_scope
+    from app.models import WhatsAppInboundEvent, WhatsAppLink
+
+    with session_scope() as db:
+        db.add(
+            WhatsAppLink(
+                user_id=registered["user"]["id"],
+                phone_e164="+573001234567",
+                provider_jid="573001234567@s.whatsapp.net",
+                instance_name="pulso",
+                verified_at=datetime.now(UTC),
+            )
+        )
+    event_id = add_event(text="No dupliques este turno")
+    monkeypatch.setattr(
+        "app.whatsapp_worker.run_chat_turn",
+        lambda *_args: SimpleNamespace(content="Respuesta"),
+    )
+
+    class ProcessStopsDuringSend:
+        def send_text(self, *_args):
+            raise KeyboardInterrupt
+
+    from app.whatsapp_worker import process_next_event
+
+    with session_scope() as db:
+        with pytest.raises(KeyboardInterrupt):
+            process_next_event(db, ProcessStopsDuringSend())
+        event = db.get(WhatsAppInboundEvent, event_id)
+        assert event.status == "sending"
+
+
+def test_verification_records_sending_before_confirmation(client, registered, csrf_headers):
+    created = client.post(
+        "/api/v1/whatsapp/link",
+        headers=csrf_headers,
+        json={"phone": "+573001234567"},
+    ).json()
+    event_id = add_event(text=created["code"])
+
+    class ProcessStopsDuringSend:
+        def send_text(self, *_args):
+            raise KeyboardInterrupt
+
+    from app.database import session_scope
+    from app.models import WhatsAppInboundEvent
+    from app.whatsapp_worker import process_next_event
+
+    with session_scope() as db:
+        with pytest.raises(KeyboardInterrupt):
+            process_next_event(db, ProcessStopsDuringSend())
+        event = db.get(WhatsAppInboundEvent, event_id)
+        assert event.status == "sending"

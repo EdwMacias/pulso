@@ -48,6 +48,7 @@ def _claim_event(db: Session) -> WhatsAppInboundEvent | None:
             )
         )
         .order_by(WhatsAppInboundEvent.received_at, WhatsAppInboundEvent.id)
+        .limit(1)
         .with_for_update(skip_locked=True)
     )
     if event is None:
@@ -67,6 +68,12 @@ def _finish(
     event.last_error = error
     event.next_attempt_at = None
     event.processed_at = datetime.now(UTC)
+    db.commit()
+
+
+def _mark_sending(db: Session, event: WhatsAppInboundEvent) -> None:
+    event.status = "sending"
+    event.next_attempt_at = None
     db.commit()
 
 
@@ -158,6 +165,8 @@ def _verify_challenge(
     link.verified_at = now
     link.revoked_at = None
     challenge.consumed_at = now
+    event.status = "sending"
+    event.next_attempt_at = None
     db.commit()
     db.refresh(link)
     return link
@@ -175,6 +184,7 @@ def process_next_event(db: Session, sender: EvolutionClient) -> bool:
             if user is None:
                 _finish(db, event, "failed", "linked_user_missing")
                 return True
+            _mark_sending(db, event)
             assistant = run_chat_turn(db, user, event.message_text)
             sender.send_text(event.sender_jid, assistant.content)
             _finish(db, event, "processed")

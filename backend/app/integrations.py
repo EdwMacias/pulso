@@ -1,4 +1,5 @@
 import hmac
+import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
@@ -28,8 +29,7 @@ def integrations_status(_: User = Depends(current_user)):
 
 
 @router.post("/evolution/webhook")
-def evolution_webhook(
-    payload: dict,
+async def evolution_webhook(
     request: Request,
     x_webhook_secret: str | None = Header(default=None),
     db: Session = Depends(get_db),
@@ -43,10 +43,21 @@ def evolution_webhook(
     ):
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > 256_000:
+    if content_length and (not content_length.isdigit() or int(content_length) > 256_000):
         raise HTTPException(status_code=413, detail="Webhook payload is too large")
     if not settings.whatsapp_instance:
         raise HTTPException(status_code=503, detail="WhatsApp is not configured")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 256_000:
+            raise HTTPException(status_code=413, detail="Webhook payload is too large")
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=422, detail="Webhook payload must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="Webhook payload must be an object")
     try:
         parsed = parse_inbound_event(payload, settings.whatsapp_instance)
     except ValueError as exc:

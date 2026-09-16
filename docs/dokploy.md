@@ -89,7 +89,10 @@ docker compose --env-file .env -f infra/compose.yaml --profile whatsapp up -d --
 Pulso ignora grupos, mensajes propios, multimedia y números no vinculados. Una
 respuesta solo se genera después de recibir un texto privado desde el número
 verificado. La aceptación del endpoint de Evolution no demuestra entrega ni
-lectura en el teléfono.
+lectura en el teléfono. Para evitar mensajes o acciones duplicadas tras una
+caída del worker, cada intento de envío se marca antes de contactar Evolution;
+si el resultado queda desconocido, Pulso no lo reintenta automáticamente y el
+usuario puede escribir de nuevo.
 
 ## Actualizaciones y datos
 

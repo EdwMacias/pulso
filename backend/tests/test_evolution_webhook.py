@@ -55,6 +55,16 @@ def test_webhook_requires_shared_secret(client, configured_whatsapp, inbound_pay
     assert wrong.status_code == 401
 
 
+def test_webhook_authenticates_before_parsing_body(client, configured_whatsapp):
+    response = client.post(
+        "/api/v1/integrations/evolution/webhook",
+        content=b"{not-json",
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 401
+
+
 def test_webhook_persists_inbound_text_once(client, configured_whatsapp, inbound_payload):
     first = post_webhook(client, configured_whatsapp, inbound_payload)
     second = post_webhook(client, configured_whatsapp, inbound_payload)
