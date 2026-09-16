@@ -75,7 +75,7 @@ def test_failed_groq_turn_rolls_back_tool_writes(client, registered, csrf_header
         def __init__(self, **_kwargs):
             self.chat = SimpleNamespace(completions=Completions())
 
-    monkeypatch.setattr("app.chat.Groq", FakeGroq)
+    monkeypatch.setattr("app.chat_service.Groq", FakeGroq)
     response = client.post(
         "/api/v1/chat/messages", headers=csrf_headers, json={"content": "Crea una tarea"}
     )

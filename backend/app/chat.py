@@ -1,87 +1,15 @@
-import json
-from datetime import UTC, datetime
-from zoneinfo import ZoneInfo
-
 from fastapi import APIRouter, Depends, HTTPException
-from groq import Groq
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .config import get_settings
+from .chat_service import ChatConfigurationError, ChatProviderError, run_chat_turn
 from .database import get_db
 from .dependencies import current_user, require_csrf
-from .models import ChatMessage, Reminder, Task, User
+from .models import ChatMessage, User
 from .schemas import ChatIn, ChatMessageOut
 
 
 router = APIRouter(prefix="/chat/messages", tags=["chat"])
-
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "list_tasks",
-            "description": "Lista las tareas del usuario autenticado.",
-            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_task",
-            "description": "Crea una tarea para el usuario autenticado.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string"},
-                    "description": {"type": ["string", "null"]},
-                    "priority": {"type": "string", "enum": ["low", "medium", "high"]},
-                },
-                "required": ["title", "priority"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "complete_task",
-            "description": "Marca una tarea propia como completada.",
-            "parameters": {
-                "type": "object",
-                "properties": {"task_id": {"type": "string"}},
-                "required": ["task_id"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_reminder",
-            "description": "Programa un recordatorio para una tarea propia. scheduled_at requiere ISO 8601 con offset.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {"type": "string"},
-                    "scheduled_at": {"type": "string"},
-                    "timezone": {"type": "string"},
-                    "recurrence": {"type": "string", "enum": ["none", "daily", "weekly"]},
-                },
-                "required": ["task_id", "scheduled_at", "timezone", "recurrence"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "productivity_summary",
-            "description": "Obtiene conteos agregados de tareas propias.",
-            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-    },
-]
 
 
 @router.get("", response_model=list[ChatMessageOut])
@@ -99,126 +27,15 @@ def send_message(
     user: User = Depends(require_csrf),
     db: Session = Depends(get_db),
 ):
-    settings = get_settings()
-    if not settings.groq_api_key:
+    try:
+        return run_chat_turn(db, user, payload.content)
+    except ChatConfigurationError as exc:
         raise HTTPException(
             status_code=503,
             detail={"code": "groq_unavailable", "message": "Groq is not configured"},
-        )
-
-    history = db.scalars(
-        select(ChatMessage)
-        .where(ChatMessage.user_id == user.id)
-        .order_by(ChatMessage.created_at.desc())
-        .limit(20)
-    ).all()
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "Eres el coordinador de un asistente personal en español. Usa las herramientas "
-                "especializadas solo cuando hagan falta. Nunca inventes que una acción ocurrió. "
-                f"La zona del usuario es {user.timezone}; hora local actual: "
-                f"{datetime.now(ZoneInfo(user.timezone)).isoformat()}."
-            ),
-        },
-        *[{"role": item.role, "content": item.content} for item in reversed(history)],
-        {"role": "user", "content": payload.content},
-    ]
-    client = Groq(api_key=settings.groq_api_key)
-    try:
-        content = _tool_loop(client, messages, db, user)
-    except Exception as exc:
-        db.rollback()
+        ) from exc
+    except ChatProviderError as exc:
         raise HTTPException(
             status_code=503,
             detail={"code": "groq_unavailable", "message": "Groq request failed"},
         ) from exc
-
-    db.add(ChatMessage(user_id=user.id, role="user", content=payload.content))
-    assistant = ChatMessage(user_id=user.id, role="assistant", content=content)
-    db.add(assistant)
-    db.commit()
-    db.refresh(assistant)
-    return assistant
-
-
-def _tool_loop(client: Groq, messages: list[dict], db: Session, user: User) -> str:
-    settings = get_settings()
-    for _ in range(settings.groq_max_tool_calls + 1):
-        completion = client.chat.completions.create(
-            model=settings.groq_chat_model,
-            messages=messages,
-            tools=TOOLS,
-            tool_choice="auto",
-            temperature=0.2,
-        )
-        message = completion.choices[0].message
-        if not message.tool_calls:
-            return message.content or "No pude generar una respuesta."
-        messages.append(message.model_dump(exclude_none=True))
-        for call in message.tool_calls:
-            result = _execute_tool(db, user, call.function.name, json.loads(call.function.arguments))
-            messages.append(
-                {"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, default=str)}
-            )
-    raise RuntimeError("tool call limit exceeded")
-
-
-def _execute_tool(db: Session, user: User, name: str, args: dict):
-    if name == "list_tasks":
-        tasks = db.scalars(select(Task).where(Task.user_id == user.id).order_by(Task.created_at)).all()
-        return [{"id": t.id, "title": t.title, "priority": t.priority, "status": t.status} for t in tasks]
-    if name == "create_task":
-        task = Task(
-            user_id=user.id,
-            title=str(args["title"])[:200],
-            description=(str(args.get("description"))[:5000] if args.get("description") else None),
-            priority=args.get("priority", "medium") if args.get("priority") in {"low", "medium", "high"} else "medium",
-        )
-        db.add(task)
-        db.flush()
-        return {"id": task.id, "title": task.title, "priority": task.priority, "status": task.status}
-    if name == "complete_task":
-        task = db.scalar(select(Task).where(Task.id == args.get("task_id"), Task.user_id == user.id))
-        if not task:
-            return {"error": "task_not_found"}
-        task.status = "completed"
-        task.completed_at = datetime.now(UTC)
-        db.flush()
-        return {"id": task.id, "status": task.status}
-    if name == "create_reminder":
-        task = db.scalar(select(Task).where(Task.id == args.get("task_id"), Task.user_id == user.id))
-        if not task:
-            return {"error": "task_not_found"}
-        try:
-            zone = ZoneInfo(args["timezone"])
-            scheduled = datetime.fromisoformat(args["scheduled_at"].replace("Z", "+00:00"))
-            if scheduled.tzinfo is None:
-                raise ValueError
-            recurrence = args.get("recurrence", "none")
-            if recurrence not in {"none", "daily", "weekly"}:
-                raise ValueError
-            scheduled.astimezone(zone)
-        except (KeyError, TypeError, ValueError):
-            return {"error": "invalid_reminder_arguments"}
-        reminder = Reminder(
-            user_id=user.id,
-            task_id=task.id,
-            timezone=args["timezone"],
-            recurrence=recurrence,
-            next_run_at=scheduled.astimezone(UTC),
-        )
-        db.add(reminder)
-        db.flush()
-        return {"id": reminder.id, "scheduled_at": reminder.next_run_at, "timezone": reminder.timezone}
-    if name == "productivity_summary":
-        rows = dict(
-            db.execute(
-                select(Task.status, func.count(Task.id))
-                .where(Task.user_id == user.id)
-                .group_by(Task.status)
-            ).all()
-        )
-        return {"total": sum(rows.values()), "completed": rows.get("completed", 0), "pending": rows.get("pending", 0)}
-    return {"error": "unknown_tool"}
