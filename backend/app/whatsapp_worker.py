@@ -71,8 +71,8 @@ def _finish(
     db.commit()
 
 
-def _mark_sending(db: Session, event: WhatsAppInboundEvent) -> None:
-    event.status = "sending"
+def _mark_turn_started(db: Session, event: WhatsAppInboundEvent) -> None:
+    event.status = "started"
     event.next_attempt_at = None
     db.commit()
 
@@ -165,7 +165,7 @@ def _verify_challenge(
     link.verified_at = now
     link.revoked_at = None
     challenge.consumed_at = now
-    event.status = "sending"
+    event.status = "started"
     event.next_attempt_at = None
     db.commit()
     db.refresh(link)
@@ -184,7 +184,7 @@ def process_next_event(db: Session, sender: EvolutionClient) -> bool:
             if user is None:
                 _finish(db, event, "failed", "linked_user_missing")
                 return True
-            _mark_sending(db, event)
+            _mark_turn_started(db, event)
             assistant = run_chat_turn(db, user, event.message_text)
             sender.send_text(event.sender_jid, assistant.content)
             _finish(db, event, "processed")

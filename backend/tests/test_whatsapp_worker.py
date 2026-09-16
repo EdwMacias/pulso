@@ -235,7 +235,7 @@ def test_claimed_old_event_is_not_immediately_claimed_by_another_worker(client):
         assert _claim_event(second_worker) is None
 
 
-def test_worker_records_sending_before_calling_evolution(client, registered, monkeypatch):
+def test_worker_records_turn_started_before_calling_evolution(client, registered, monkeypatch):
     from app.database import session_scope
     from app.models import WhatsAppInboundEvent, WhatsAppLink
 
@@ -265,10 +265,10 @@ def test_worker_records_sending_before_calling_evolution(client, registered, mon
         with pytest.raises(KeyboardInterrupt):
             process_next_event(db, ProcessStopsDuringSend())
         event = db.get(WhatsAppInboundEvent, event_id)
-        assert event.status == "sending"
+        assert event.status == "started"
 
 
-def test_verification_records_sending_before_confirmation(client, registered, csrf_headers):
+def test_verification_records_turn_started_before_confirmation(client, registered, csrf_headers):
     created = client.post(
         "/api/v1/whatsapp/link",
         headers=csrf_headers,
@@ -288,4 +288,35 @@ def test_verification_records_sending_before_confirmation(client, registered, cs
         with pytest.raises(KeyboardInterrupt):
             process_next_event(db, ProcessStopsDuringSend())
         event = db.get(WhatsAppInboundEvent, event_id)
-        assert event.status == "sending"
+        assert event.status == "started"
+
+
+def test_worker_keeps_started_turn_after_process_stops_during_groq(
+    client, registered, monkeypatch
+):
+    from app.database import session_scope
+    from app.models import WhatsAppInboundEvent, WhatsAppLink
+
+    with session_scope() as db:
+        db.add(
+            WhatsAppLink(
+                user_id=registered["user"]["id"],
+                phone_e164="+573001234567",
+                provider_jid="573001234567@s.whatsapp.net",
+                instance_name="pulso",
+                verified_at=datetime.now(UTC),
+            )
+        )
+    event_id = add_event(text="No repitas mis acciones")
+
+    def process_stops_during_groq(*_args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("app.whatsapp_worker.run_chat_turn", process_stops_during_groq)
+    from app.whatsapp_worker import process_next_event
+
+    with session_scope() as db:
+        with pytest.raises(KeyboardInterrupt):
+            process_next_event(db, FakeSender())
+        event = db.get(WhatsAppInboundEvent, event_id)
+        assert event.status == "started"
