@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LayoutDashboard, CalendarDays, MessageCircle, ChartNoAxesCombined, Settings2, Plus, ArrowUpRight, ArrowRight, Check, Bell, X, LogOut, Send, Sparkles, Circle, ChevronRight, Menu } from 'lucide-vue-next'
 import { useSession } from '../stores/session'
 import { api } from '../services/api'
+import { getWhatsAppStatus, startWhatsAppLink, unlinkWhatsApp, type WhatsAppStatus } from '../services/whatsapp'
 type Task = { id: string; title: string; description: string | null; status: string; priority: string }
 type Reminder = { id: string; task_id: string; scheduled_at: string; timezone: string; recurrence: string; status: string }
 const session = useSession(), route = useRoute(), router = useRouter()
@@ -13,6 +14,9 @@ const loading = ref(true), busy = ref(false), error = ref(''), toast = ref(''), 
 const taskModal = ref(false), reminderTask = ref<Task | null>(null), editingTask = ref<string | null>(null)
 const title = ref(''), description = ref(''), priority = ref('medium'), dateTime = ref(''), recurrence = ref('none'), chat = ref('')
 const timezone = ref('America/Bogota'), responseMode = ref('text')
+const whatsappStatus = ref<WhatsAppStatus>({ status:'unlinked', masked_phone:null, expires_at:null, verified_at:null })
+const whatsappPhone = ref(''), whatsappCode = ref('')
+let whatsappPoll: ReturnType<typeof setInterval> | undefined
 const nav = [{ path: '/', label: 'Mi día', icon: LayoutDashboard }, { path: '/agenda', label: 'Mis tareas', icon: CalendarDays }, { path: '/asistente', label: 'Asistente', icon: MessageCircle }, { path: '/actividad', label: 'Mi actividad', icon: ChartNoAxesCombined }, { path: '/ajustes', label: 'Configuración', icon: Settings2 }]
 const currentTitle = computed(() => nav.find(n => n.path === route.path)?.label || 'Mi día')
 const visibleTasks = computed(() => tasks.value.filter(t => filter.value === 'all' || t.status === filter.value))
@@ -23,11 +27,11 @@ function taskName(id: string) { return tasks.value.find(t => t.id === id)?.title
 async function load() {
   loading.value = true; error.value = ''
   try {
-    const [t,r,s,i,p,n] = await Promise.all([api('/tasks'), api('/reminders'), api('/analytics/summary'), api('/integrations/status'), api('/me/preferences'), api('/notifications')])
+    const [t,r,s,i,p,n,w] = await Promise.all([api('/tasks'), api('/reminders'), api('/analytics/summary'), api('/integrations/status'), api('/me/preferences'), api('/notifications'), getWhatsAppStatus()])
     tasks.value=t; reminders.value=r; summary.value=s; integrations.value=i; notifications.value=n
-    timezone.value=p.timezone; responseMode.value=p.response_mode
+    timezone.value=p.timezone; responseMode.value=p.response_mode; whatsappStatus.value=w
     if (route.path === '/asistente') messages.value=await api('/chat/messages')
-  } catch(e) { error.value=(e as Error).message } finally { loading.value=false }
+  } catch(e) { error.value=(e as Error).message } finally { loading.value=false; syncWhatsAppPolling() }
 }
 async function act(fn: () => Promise<void>, success = '') {
   busy.value=true; error.value=''; toast.value=''
@@ -45,9 +49,22 @@ async function saveReminder() { await act(async () => {
 async function cancelReminder(id: string) { await act(async () => { await api(`/reminders/${id}`, { method:'PATCH', body:JSON.stringify({ status:'cancelled' }) }); await load() }, 'Recordatorio cancelado.') }
 async function sendChat() { const content=chat.value.trim(); if (!content) return; await act(async () => { await api('/chat/messages', { method:'POST', body:JSON.stringify({ content }) }); chat.value=''; messages.value=await api('/chat/messages'); await load() }) }
 async function savePreferences() { await act(async () => { await api('/me/preferences', { method:'PATCH', body:JSON.stringify({ timezone:timezone.value, response_mode:responseMode.value }) }); await load() }, 'Preferencias guardadas.') }
+async function refreshWhatsAppStatus() { whatsappStatus.value=await getWhatsAppStatus(); syncWhatsAppPolling() }
+async function beginWhatsAppLink() { await act(async () => { const pending=await startWhatsAppLink(whatsappPhone.value.trim()); whatsappStatus.value={ status:'pending', masked_phone:pending.masked_phone, expires_at:pending.expires_at, verified_at:null }; whatsappCode.value=pending.code; syncWhatsAppPolling() }, 'Código de vinculación generado.') }
+async function removeWhatsAppLink() { await act(async () => { await unlinkWhatsApp(); whatsappCode.value=''; whatsappPhone.value=''; await refreshWhatsAppStatus() }, 'Número de WhatsApp desvinculado.') }
+function syncWhatsAppPolling() {
+  if (whatsappPoll) clearInterval(whatsappPoll)
+  whatsappPoll=undefined
+  if (route.path==='/ajustes' && whatsappStatus.value.status==='pending') {
+    whatsappPoll=setInterval(async () => {
+      try { whatsappStatus.value=await getWhatsAppStatus(); if (whatsappStatus.value.status!=='pending') syncWhatsAppPolling() } catch { /* load() exposes connection errors */ }
+    }, 3000)
+  }
+}
 async function logout() { await act(async () => { await session.logout(); await router.push('/login') }) }
 watch(() => route.path, () => { sidebar.value=false; filter.value='all'; load() })
 onMounted(load)
+onBeforeUnmount(() => { if (whatsappPoll) clearInterval(whatsappPoll) })
 </script>
 <template>
   <div class="workspace">
@@ -63,7 +80,37 @@ onMounted(load)
         </template>
         <template v-else-if="route.path==='/asistente'"><div class="page-heading"><div><p class="eyebrow">UNA CONVERSACIÓN, MENOS PENDIENTES</p><h1>Piensa en voz alta.<br>Empieza por escribir.</h1><p class="muted">El asistente usa Groq para ayudarte con tus tareas.</p></div><span class="status-badge">{{ integrations.groq?.configured ? 'Groq configurado' : 'Groq sin configurar' }}</span></div><section class="panel chat-panel"><div v-if="!messages.length" class="empty"><Sparkles :size="32" /><h2>¿Qué tienes en mente?</h2><p>Prueba con «Muéstrame mis tareas pendientes» o «Crea una tarea para preparar el informe».</p></div><div v-for="m in messages" :key="m.id" class="message" :class="m.role || m.direction"><small>{{ m.role==='user' || m.direction==='inbound' ? 'Tú' : 'Pulso' }}</small><p>{{ m.content }}</p></div><form class="chat-compose" @submit.prevent="sendChat"><label class="sr-only" for="message">Mensaje al asistente</label><textarea id="message" v-model="chat" rows="2" placeholder="Escribe tu siguiente paso…" :disabled="busy || !integrations.groq?.configured" required maxlength="4000"></textarea><button class="primary" :disabled="busy || !chat.trim() || !integrations.groq?.configured" aria-label="Enviar mensaje"><Send :size="19" /></button></form><p class="muted small">{{ integrations.groq?.configured ? 'Las acciones se confirman después de guardarlas. La voz llegará en el siguiente incremento.' : 'Configura GROQ_API_KEY en el servidor para activar la conversación. Puedes gestionar tus tareas desde la agenda.' }}</p></section></template>
         <template v-else-if="route.path==='/actividad'"><div class="page-heading"><div><p class="eyebrow">PEQUEÑOS PASOS, AVANCES REALES</p><h1>Así vas construyendo tu ritmo.</h1><p class="muted">Un resumen de tus tareas guardadas, sin estimaciones.</p></div></div><div class="metrics-grid"><section v-for="m in [{label:'Tareas creadas',value:summary.total_tasks},{label:'Pendientes',value:summary.pending_tasks},{label:'Completadas',value:summary.completed_tasks}]" :key="m.label" class="panel metric"><p>{{ m.label }}</p><strong>{{ m.value }}</strong></section></div><section class="panel"><div class="section-header"><h2>Historial de avisos</h2><span class="count">{{ notifications.length }}</span></div><p class="muted">Los avisos de este incremento se guardan dentro de la aplicación.</p><div v-if="!notifications.length" class="empty"><Bell :size="24" /><p>Aquí aparecerán los recordatorios que procese el scheduler.</p></div><div v-for="n in notifications" :key="n.id" class="notification-row"><div><strong>{{ n.content || n.title || 'Recordatorio' }}</strong><p class="muted small">{{ n.created_at ? formatDate(n.created_at) : '' }}</p></div><span class="status-badge">{{ n.status }}</span></div></section></template>
-        <template v-else><div class="page-heading"><div><p class="eyebrow">A TU MANERA</p><h1>Un asistente que se adapta a ti.</h1><p class="muted">Tus preferencias y el estado real de cada integración.</p></div></div><div class="settings-grid"><form class="panel settings-form" @submit.prevent="savePreferences"><h2>Preferencias personales</h2><label>Zona horaria<input v-model="timezone" required placeholder="America/Bogota"></label><p class="muted small">Usa una zona IANA, como America/Bogota o Europe/Madrid.</p><label>Formato preferido<select v-model="responseMode"><option value="text">Texto</option><option value="audio">Audio (cuando esté disponible)</option><option value="both">Texto y audio (cuando esté disponible)</option></select></label><button class="primary" :disabled="busy">Guardar preferencias</button></form><section class="panel"><h2>Conexiones</h2><div v-for="i in [{key:'groq',name:'Groq',description:'Conversación y agentes de tareas'},{key:'whatsapp',name:'WhatsApp · Evolution API',description:'Transporte pendiente de implementar'},{key:'tts',name:'Voz en español',description:'STT / TTS pendientes de integrar'}]" :key="i.key" class="integration-row"><span class="integration-icon"><MessageCircle v-if="i.key==='whatsapp'" :size="22" /><Sparkles v-else :size="22" /></span><div><strong>{{ i.name }}</strong><p>{{ i.description }}</p></div><span class="status-badge">{{ i.key==='groq' && integrations[i.key]?.configured ? 'Configurado' : 'Pendiente' }}</span></div><p class="muted small">Las credenciales se administran en el servidor o en Dokploy. Nunca se guardan en el navegador.</p></section></div></template>
+        <template v-else>
+          <div class="page-heading"><div><p class="eyebrow">A TU MANERA</p><h1>Un asistente que se adapta a ti.</h1><p class="muted">Tus preferencias y el estado real de cada integración.</p></div></div>
+          <div class="settings-grid">
+            <form class="panel settings-form" @submit.prevent="savePreferences"><h2>Preferencias personales</h2><label>Zona horaria<input v-model="timezone" required placeholder="America/Bogota"></label><p class="muted small">Usa una zona IANA, como America/Bogota o Europe/Madrid.</p><label>Formato preferido<select v-model="responseMode"><option value="text">Texto</option><option value="audio">Audio (cuando esté disponible)</option><option value="both">Texto y audio (cuando esté disponible)</option></select></label><button class="primary" :disabled="busy">Guardar preferencias</button></form>
+            <section class="panel connections-panel">
+              <h2>Conexiones</h2>
+              <div class="integration-row"><span class="integration-icon"><Sparkles :size="22" /></span><div><strong>Groq</strong><p>Conversación y agentes de tareas</p></div><span class="status-badge">{{ integrations.groq?.configured ? 'Configurado' : 'Pendiente' }}</span></div>
+              <div class="integration-row whatsapp-integration">
+                <span class="integration-icon"><MessageCircle :size="22" /></span>
+                <div><strong>WhatsApp · Evolution API</strong><p>Responde únicamente cuando escribes desde tu número vinculado.</p></div>
+                <span class="status-badge" :class="{ verified:whatsappStatus.status==='verified' }">{{ whatsappStatus.status==='verified' ? 'Vinculado' : whatsappStatus.status==='pending' ? 'Esperando código' : integrations.whatsapp?.available ? 'Sin vincular' : 'Pendiente' }}</span>
+              </div>
+              <div v-if="!integrations.whatsapp?.available" class="connection-note"><strong>Falta configuración del servidor</strong><p>Configura Evolution API, la instancia y el secreto del webhook para habilitar la vinculación.</p></div>
+              <form v-else-if="whatsappStatus.status==='unlinked'" class="whatsapp-link-form" @submit.prevent="beginWhatsAppLink">
+                <label for="whatsapp-phone">Tu número con indicativo internacional<input id="whatsapp-phone" v-model="whatsappPhone" type="tel" required maxlength="16" pattern="^\+[1-9][0-9]{7,14}$" placeholder="+573001234567"></label>
+                <p class="muted small">Debe comenzar por + y pertenecer al WhatsApp desde el que escribirás.</p>
+                <button class="primary" :disabled="busy">Generar código</button>
+              </form>
+              <div v-else-if="whatsappStatus.status==='pending'" class="whatsapp-challenge">
+                <p class="muted small">Envía este código desde {{ whatsappStatus.masked_phone }} al número emisor del asistente. Se verifica automáticamente.</p>
+                <strong v-if="whatsappCode" class="link-code">{{ whatsappCode }}</strong>
+                <p v-else class="connection-note">El código solo se muestra al generarlo. Si ya no lo tienes, desvincula este intento y genera uno nuevo.</p>
+                <p v-if="whatsappStatus.expires_at" class="muted small">Vence: {{ formatDate(whatsappStatus.expires_at) }}</p>
+                <div class="connection-actions"><button type="button" class="text-button" :disabled="busy" @click="refreshWhatsAppStatus">Actualizar estado</button><button type="button" class="text-button danger" :disabled="busy" @click="removeWhatsAppLink">Cancelar</button></div>
+              </div>
+              <div v-else class="whatsapp-verified"><div><span class="live-dot"></span><strong>Número verificado</strong><p>{{ whatsappStatus.masked_phone }} · Pulso solo responderá a mensajes iniciados desde este número.</p></div><button type="button" class="text-button danger" :disabled="busy" @click="removeWhatsAppLink">Desvincular</button></div>
+              <div class="integration-row"><span class="integration-icon"><Sparkles :size="22" /></span><div><strong>Voz en español</strong><p>STT / TTS pendientes de integrar</p></div><span class="status-badge">Pendiente</span></div>
+              <p class="muted small">Las credenciales se administran en el servidor o en Dokploy. Nunca se guardan en el navegador.</p>
+            </section>
+          </div>
+        </template>
         <footer class="page-footer"><span>pulso · Un paso a la vez.</span><span>Tu espacio personal</span></footer>
       </main>
     </div>
