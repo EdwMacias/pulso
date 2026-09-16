@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from enum import Enum
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -222,3 +223,21 @@ class NotificationOut(BaseModel):
     content: str
     status: str
     created_at: datetime
+
+
+class WhatsAppLinkIn(BaseModel):
+    phone: str = Field(min_length=8, max_length=16)
+
+
+class WhatsAppLinkPending(BaseModel):
+    status: Literal["pending"]
+    masked_phone: str
+    code: str
+    expires_at: datetime
+
+
+class WhatsAppLinkStatus(BaseModel):
+    status: Literal["unlinked", "pending", "verified"]
+    masked_phone: str | None = None
+    expires_at: datetime | None = None
+    verified_at: datetime | None = None

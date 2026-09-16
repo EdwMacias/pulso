@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -114,3 +114,53 @@ class ChatMessage(Base):
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
+
+class WhatsAppLink(Base):
+    __tablename__ = "whatsapp_links"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    phone_e164: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    provider_jid: Mapped[str] = mapped_column(String(128))
+    instance_name: Mapped[str] = mapped_column(String(128), index=True)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    user: Mapped[User] = relationship()
+
+
+class WhatsAppLinkChallenge(Base):
+    __tablename__ = "whatsapp_link_challenges"
+    __table_args__ = (Index("ix_whatsapp_challenge_user_active", "user_id", "consumed_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    phone_e164: Mapped[str] = mapped_column(String(16), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class WhatsAppInboundEvent(Base):
+    __tablename__ = "whatsapp_inbound_events"
+    __table_args__ = (
+        UniqueConstraint("instance_name", "provider_event_id", name="uq_whatsapp_event"),
+        Index("ix_whatsapp_event_status_attempt", "status", "next_attempt_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    provider_event_id: Mapped[str] = mapped_column(String(128))
+    instance_name: Mapped[str] = mapped_column(String(128))
+    sender_jid: Mapped[str] = mapped_column(String(128))
+    sender_phone: Mapped[str | None] = mapped_column(String(16), index=True)
+    message_text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_error: Mapped[str | None] = mapped_column(String(128))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

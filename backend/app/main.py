@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import auth, chat, integrations, notifications, preferences, reminders, tasks
+from . import auth, chat, integrations, notifications, preferences, reminders, tasks, whatsapp
 from .config import get_settings
 from .database import Base, get_engine
 
@@ -33,6 +33,7 @@ def create_app() -> FastAPI:
     application.include_router(chat.router, prefix=api_prefix)
     application.include_router(integrations.router, prefix=api_prefix)
     application.include_router(notifications.router, prefix=api_prefix)
+    application.include_router(whatsapp.router, prefix=api_prefix)
 
     @application.get("/health", tags=["health"])
     def health():
