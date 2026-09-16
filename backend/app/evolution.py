@@ -56,7 +56,12 @@ def parse_inbound_event(payload: dict, expected_instance: str) -> ParsedInbound 
     text = text.strip()
     if len(text) > 10_000:
         raise ValueError("message text is too long")
-    sender_phone = _phone_from_jid(sender_jid) or _phone_from_jid(payload.get("sender"))
+    sender_phone = (
+        _phone_from_jid(sender_jid)
+        or _phone_from_jid(key.get("senderPn"))
+        or _phone_from_jid(key.get("remoteJidAlt"))
+        or _phone_from_jid(payload.get("sender"))
+    )
     return ParsedInbound(
         event_id=event_id,
         instance_name=expected_instance,

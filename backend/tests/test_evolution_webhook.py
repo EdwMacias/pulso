@@ -99,6 +99,27 @@ def test_webhook_accepts_extended_text_and_preserves_lid(
         assert row.sender_phone == "+573001234567"
 
 
+def test_webhook_uses_key_sender_phone_for_lid_when_wrapper_sender_is_absent(
+    client, configured_whatsapp, inbound_payload
+):
+    payload = copy.deepcopy(inbound_payload)
+    payload["data"]["key"]["id"] = "message-lid-key-phone"
+    payload["data"]["key"]["remoteJid"] = "123456789012345@lid"
+    payload["data"]["key"]["senderPn"] = "573001234567@s.whatsapp.net"
+    del payload["sender"]
+
+    response = post_webhook(client, configured_whatsapp, payload)
+
+    assert response.json() == {"status": "accepted"}
+    from app.database import session_scope
+    from app.models import WhatsAppInboundEvent
+
+    with session_scope() as db:
+        row = db.query(WhatsAppInboundEvent).one()
+        assert row.sender_jid == "123456789012345@lid"
+        assert row.sender_phone == "+573001234567"
+
+
 @pytest.mark.parametrize(
     ("change", "value"),
     [
