@@ -30,7 +30,6 @@ def _as_utc(value: datetime) -> datetime:
 
 def _claim_event(db: Session) -> WhatsAppInboundEvent | None:
     now = datetime.now(UTC)
-    stale = now - timedelta(minutes=5)
     event = db.scalar(
         select(WhatsAppInboundEvent)
         .where(
@@ -44,7 +43,7 @@ def _claim_event(db: Session) -> WhatsAppInboundEvent | None:
                 ),
                 and_(
                     WhatsAppInboundEvent.status == "processing",
-                    WhatsAppInboundEvent.received_at <= stale,
+                    WhatsAppInboundEvent.next_attempt_at <= now,
                 ),
             )
         )
@@ -55,7 +54,7 @@ def _claim_event(db: Session) -> WhatsAppInboundEvent | None:
         return None
     event.status = "processing"
     event.attempts += 1
-    event.next_attempt_at = None
+    event.next_attempt_at = now + timedelta(minutes=5)
     db.commit()
     db.refresh(event)
     return event

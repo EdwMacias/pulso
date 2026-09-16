@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 
@@ -206,3 +206,28 @@ def test_uncertain_send_is_terminal_to_avoid_duplicate_reply(
         assert event.status == "failed"
         assert event.last_error == "send_result_unknown"
         assert event.next_attempt_at is None
+
+
+def test_claimed_old_event_is_not_immediately_claimed_by_another_worker(client):
+    """A second worker must wait for the processing lease, not receipt time."""
+    from app.database import session_scope
+    from app.models import WhatsAppInboundEvent
+    from app.whatsapp_worker import _claim_event
+
+    with session_scope() as db:
+        event = WhatsAppInboundEvent(
+            provider_event_id="old-event",
+            instance_name="pulso",
+            sender_jid="573001234567@s.whatsapp.net",
+            sender_phone="+573001234567",
+            message_text="Hola",
+            received_at=datetime.now(UTC) - timedelta(minutes=10),
+        )
+        db.add(event)
+
+    with session_scope() as first_worker:
+        claimed = _claim_event(first_worker)
+        assert claimed is not None
+
+    with session_scope() as second_worker:
+        assert _claim_event(second_worker) is None
