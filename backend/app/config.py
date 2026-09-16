@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     groq_max_tool_calls: int = Field(default=6, ge=1, le=12)
     whatsapp_api_url: str | None = None
     whatsapp_api_key: str | None = None
+    whatsapp_instance: str | None = None
+    whatsapp_webhook_secret: str | None = None
+    whatsapp_worker_poll_seconds: int = Field(default=2, ge=1, le=300)
     tts_api_key: str | None = None
     scheduler_poll_seconds: int = Field(default=15, ge=1, le=300)
     cors_origins: str = ""
@@ -52,6 +55,31 @@ class Settings(BaseSettings):
             raise ValueError("APP_URL must be an absolute HTTP(S) URL")
         return value
 
+    @field_validator("whatsapp_api_url")
+    @classmethod
+    def valid_whatsapp_api_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.rstrip("/")
+        if not value.startswith(("http://", "https://")):
+            raise ValueError("WHATSAPP_API_URL must be an absolute HTTP(S) URL")
+        return value
+
+    @field_validator("whatsapp_webhook_secret")
+    @classmethod
+    def secure_whatsapp_webhook_secret(cls, value: str | None) -> str | None:
+        if value is not None and len(value) < 32:
+            raise ValueError("WHATSAPP_WEBHOOK_SECRET must be at least 32 characters")
+        return value
+
+    @model_validator(mode="after")
+    def validate_environment_safety(self):
+        if self.environment == "production" and (
+            self.dev_auto_verify_email or self.dev_outbox_enabled
+        ):
+            raise ValueError("development email flags are forbidden in production")
+        return self
+
     @property
     def smtp_configured(self) -> bool:
         return bool(self.smtp_host and self.smtp_from)
@@ -63,6 +91,15 @@ class Settings(BaseSettings):
     @property
     def email_delivery_configured(self) -> bool:
         return self.dev_outbox_enabled or self.smtp_configured
+
+    @property
+    def whatsapp_configured(self) -> bool:
+        return bool(
+            self.whatsapp_api_url
+            and self.whatsapp_api_key
+            and self.whatsapp_instance
+            and self.whatsapp_webhook_secret
+        )
 
 
 @lru_cache

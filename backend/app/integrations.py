@@ -14,9 +14,8 @@ def integrations_status(_: User = Depends(current_user)):
     return {
         "groq": {"configured": bool(settings.groq_api_key)},
         "whatsapp": {
-            "configured": bool(settings.whatsapp_api_url and settings.whatsapp_api_key),
-            "available": False,
+            "configured": settings.whatsapp_configured,
+            "available": settings.whatsapp_configured,
         },
         "tts": {"configured": bool(settings.tts_api_key), "available": False},
     }
-

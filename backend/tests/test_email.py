@@ -1,3 +1,7 @@
+import pytest
+from pydantic import ValidationError
+
+
 def test_smtp_email_contains_frontend_action_url(monkeypatch, tmp_path):
     monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-that-is-long-enough")
@@ -9,22 +13,6 @@ def test_smtp_email_contains_frontend_action_url(monkeypatch, tmp_path):
     from app.config import get_settings
 
     get_settings.cache_clear()
-
-
-def test_production_rejects_development_email_bypass(monkeypatch):
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("SECRET_KEY", "a-production-secret-that-is-long-enough")
-    monkeypatch.setenv("COOKIE_SECURE", "true")
-    monkeypatch.setenv("DEV_AUTO_VERIFY_EMAIL", "true")
-    from pydantic import ValidationError
-    from app.config import Settings
-
-    try:
-        Settings()
-    except ValidationError as exc:
-        assert "development email flags" in str(exc)
-    else:
-        raise AssertionError("production accepted DEV_AUTO_VERIFY_EMAIL")
     captured = {}
 
     class FakeSMTP:
@@ -48,3 +36,14 @@ def test_production_rejects_development_email_bypass(monkeypatch):
         "https://assistant.example.test/restablecer?token=secret-token" in captured["body"]
     )
     get_settings.cache_clear()
+
+
+def test_production_rejects_development_email_bypass(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("SECRET_KEY", "a-production-secret-that-is-long-enough")
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    monkeypatch.setenv("DEV_AUTO_VERIFY_EMAIL", "true")
+    from app.config import Settings
+
+    with pytest.raises(ValidationError, match="development email flags"):
+        Settings()

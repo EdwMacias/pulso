@@ -17,6 +17,28 @@ def test_integrations_status_is_explicit(client, registered):
     }
 
 
+def test_whatsapp_is_available_only_with_complete_configuration(
+    client, registered, monkeypatch
+):
+    from app.config import get_settings
+
+    for name, value in {
+        "WHATSAPP_API_URL": "https://evolution.example.test/",
+        "WHATSAPP_API_KEY": "api-key",
+        "WHATSAPP_INSTANCE": "pulso",
+        "WHATSAPP_WEBHOOK_SECRET": "webhook-secret-at-least-32-characters",
+    }.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+
+    response = client.get("/api/v1/integrations/status")
+
+    assert response.status_code == 200
+    assert response.json()["whatsapp"] == {"configured": True, "available": True}
+    assert get_settings().whatsapp_api_url == "https://evolution.example.test"
+    get_settings.cache_clear()
+
+
 def test_failed_groq_turn_rolls_back_tool_writes(client, registered, csrf_headers, monkeypatch):
     from types import SimpleNamespace
 
