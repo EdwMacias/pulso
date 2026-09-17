@@ -115,6 +115,37 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class Document(Base):
+    __tablename__ = "documents"
+    __table_args__ = (Index("ix_documents_user_created", "user_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    original_name: Mapped[str] = mapped_column(String(255))
+    storage_name: Mapped[str] = mapped_column(String(64), unique=True)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    page_count: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), default="processing")
+    error_message: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    user: Mapped[User] = relationship()
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+    __table_args__ = (
+        UniqueConstraint("document_id", "chunk_index", name="uq_document_chunk_index"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer)
+    page_number: Mapped[int] = mapped_column(Integer)
+    content: Mapped[str] = mapped_column(Text)
+
+
 class WhatsAppLink(Base):
     __tablename__ = "whatsapp_links"
 

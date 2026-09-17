@@ -217,6 +217,29 @@ class ChatMessageOut(ORMModel):
     created_at: datetime
 
 
+class DocumentOut(ORMModel):
+    id: str
+    original_name: str
+    size_bytes: int
+    page_count: int | None
+    status: str
+    error_message: str | None
+    created_at: datetime
+
+
+class DocumentDetailOut(DocumentOut):
+    pass
+
+
+class DocumentQuestionIn(BaseModel):
+    question: str = Field(min_length=1, max_length=4_000)
+
+
+class DocumentAnswerOut(BaseModel):
+    answer: str
+    source_pages: list[int]
+
+
 class NotificationOut(BaseModel):
     id: str
     title: str

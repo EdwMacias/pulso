@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     groq_api_key: str | None = None
     groq_chat_model: str = "llama-3.3-70b-versatile"
     groq_max_tool_calls: int = Field(default=6, ge=1, le=12)
+    document_storage_path: Path = Path("document-storage")
+    document_max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
+    document_max_pages: int = Field(default=100, ge=1, le=1_000)
+    document_max_context_chunks: int = Field(default=6, ge=1, le=20)
+    document_max_context_chars: int = Field(default=18_000, ge=1_000, le=100_000)
     whatsapp_api_url: str | None = None
     whatsapp_api_key: str | None = None
     whatsapp_instance: str | None = None
