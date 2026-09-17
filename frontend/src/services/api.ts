@@ -3,7 +3,7 @@ export class ApiError extends Error {
 }
 export async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
-  if (options.body) headers.set('Content-Type', 'application/json')
+  if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   if (options.method && !['GET', 'HEAD'].includes(options.method)) {
     const token = typeof document === 'undefined' ? '' : document.cookie.split('; ').find(c => c.startsWith('csrf_token='))?.slice(11)
     if (token) headers.set('X-CSRF-Token', decodeURIComponent(token))

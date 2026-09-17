@@ -26,3 +26,15 @@ def test_document_chunks_belong_to_the_document_in_order(client, registered):
         chunk = db.query(DocumentChunk).filter_by(document_id=document.id).one()
         assert chunk.page_number == 1
         assert chunk.content == "Contenido de prueba"
+
+
+def test_rank_chunks_prefers_question_terms(client, registered):
+    from app.document_service import rank_chunks
+    from app.models import DocumentChunk
+
+    chunks = [
+        DocumentChunk(chunk_index=0, page_number=1, content="Cocina y recetas"),
+        DocumentChunk(chunk_index=1, page_number=2, content="La guía explica seguridad de contraseñas"),
+    ]
+
+    assert [chunk.page_number for chunk in rank_chunks(chunks, "seguridad contraseña")] == [2, 1]

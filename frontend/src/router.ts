@@ -5,7 +5,7 @@ import WorkspaceView from './views/WorkspaceView.vue'
 export const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/login', component: AuthView }, { path: '/registro', component: AuthView },
   { path: '/recuperar', component: AuthView }, { path: '/verificar', component: AuthView }, { path: '/restablecer', component: AuthView },
-  ...['/', '/agenda', '/asistente', '/actividad', '/ajustes'].map(path => ({ path, component: WorkspaceView, meta: { authenticated: true } })),
+  ...['/', '/agenda', '/asistente', '/documentos', '/actividad', '/ajustes'].map(path => ({ path, component: WorkspaceView, meta: { authenticated: true } })),
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ] })
 router.beforeEach(async to => {
