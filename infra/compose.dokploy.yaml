@@ -62,6 +62,9 @@ services:
       context: ../backend
     command: [python, -m, app.whatsapp_worker, run]
     environment: *backend_env
+    # Solo el worker llama a Evolution: comparte dokploy-network para usar
+    # WHATSAPP_API_URL=http://evolution-api:8080 sin salir por Cloudflare.
+    networks: [default, dokploy-network]
     depends_on:
       api: { condition: service_healthy }
     restart: unless-stopped
@@ -75,3 +78,6 @@ services:
 volumes:
   postgres_data:
   app_data:
+networks:
+  dokploy-network:
+    external: true

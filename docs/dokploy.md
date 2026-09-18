@@ -35,7 +35,10 @@ La configuración nativa de dominios está documentada por [Dokploy](https://doc
 - `SMTP_STARTTLS=true`: conexión STARTTLS, normalmente puerto 587. No confundir con TLS implícito del puerto 465.
 - `GROQ_API_KEY`: opcional para activar el chat. Sin ella, tareas y avisos internos siguen funcionando.
 - `GROQ_CHAT_MODEL`: modelo de lenguaje con herramientas, por defecto `llama-3.3-70b-versatile`.
-- `WHATSAPP_API_URL`: origen HTTPS de Evolution API 2.3.7, sin barra final.
+- `WHATSAPP_API_URL`: origen de Evolution API 2.3.7, sin barra final. Si
+  Evolution corre en el mismo Dokploy, usar `http://evolution-api:8080`: el
+  `whatsapp-worker` comparte `dokploy-network` y así no pasa por Cloudflare. Si
+  no, el origen HTTPS público.
 - `WHATSAPP_API_KEY`: API key de Evolution; nunca debe exponerse al frontend.
 - `WHATSAPP_INSTANCE`: nombre exacto de la instancia emisora ya conectada.
 - `WHATSAPP_WEBHOOK_SECRET`: secreto aleatorio de al menos 32 caracteres. Usa un
