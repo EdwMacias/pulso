@@ -31,6 +31,8 @@ El frontend, backend y scheduler se construyen desde este repositorio; PostgreSQ
 - Vinculación verificada de un teléfono y conversación de texto entrante por
   Evolution API 2.3.7; Pulso solo responde cuando el usuario vinculado escribe
   primero.
+- Documentos PDF privados con RAG: preguntas respondidas por Groq a partir de
+  los fragmentos recuperados, con fuentes visibles en la interfaz.
 - Interfaz responsive en español y despliegue del frontend/API bajo el mismo origen.
 
 **Todavía pendiente:** recordatorios salientes por WhatsApp, multimedia y voz
@@ -42,6 +44,26 @@ han probado con credenciales reales.
 ## Groq
 
 Configura `GROQ_API_KEY` en el entorno del servicio API, nunca en Vue. Para Compose local se puede pasar como variable del shell o usar un archivo privado con `--env-file`. No copies valores de ejemplo de producción al entorno local sin revisar su significado.
+
+## RAG sobre documentos
+
+La sección **Documentos** implementa Retrieval-Augmented Generation:
+
+1. **Ingesta** (`backend/app/document_service.py`): `pypdf` extrae el texto de
+   cada página y lo divide en fragmentos de hasta 1500 caracteres con 250 de
+   solapamiento, guardados con su número de página.
+2. **Recuperación** (`backend/app/retrieval.py`): BM25 sin dependencias
+   externas; ignora acentos, mayúsculas, plurales simples y palabras vacías.
+   Solo se usan fragmentos con coincidencias.
+3. **Aumento**: los mejores fragmentos completos, dentro del presupuesto de
+   `DOCUMENT_MAX_CONTEXT_CHUNKS`/`DOCUMENT_MAX_CONTEXT_CHARS`, se envían como
+   contexto delimitado y no confiable.
+4. **Generación**: Groq responde citando páginas. Sin fragmentos relevantes no
+   se consulta al modelo y se indica que el documento no contiene la respuesta.
+
+La interfaz muestra el recorrido y cada fuente recuperada con su página,
+puntuación BM25 y términos resaltados. Los PDFs se guardan en
+`DOCUMENT_STORAGE_PATH` (en Docker, el volumen `app_data`).
 
 ## Dokploy
 

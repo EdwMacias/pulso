@@ -7,7 +7,7 @@ from .dependencies import current_user, require_csrf
 from .document_service import (DocumentConfigurationError, DocumentProviderError,
     DocumentValidationError, answer_document_question, create_document, delete_document_file)
 from .models import Document, User
-from .schemas import DocumentAnswerOut, DocumentDetailOut, DocumentOut, DocumentQuestionIn
+from .schemas import DocumentAnswerOut, DocumentDetailOut, DocumentOut, DocumentQuestionIn, DocumentSourceOut
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -35,8 +35,14 @@ def ask_document(document_id: str, payload: DocumentQuestionIn, user: User = Dep
     document = _owned(db, user, document_id)
     if document.status != "ready": raise HTTPException(status_code=409, detail="Document is not ready")
     try:
-        answer, pages = answer_document_question(db, user, document, payload.question)
-        return DocumentAnswerOut(answer=answer, source_pages=pages)
+        result = answer_document_question(db, user, document, payload.question)
+        return DocumentAnswerOut(
+            answer=result.answer,
+            source_pages=sorted({item.chunk.page_number for item in result.sources}),
+            sources=[DocumentSourceOut(chunk_index=item.chunk.chunk_index, page_number=item.chunk.page_number,
+                score=item.score, matched_terms=list(item.matched_terms), content=item.chunk.content) for item in result.sources],
+            total_chunks=result.total_chunks,
+        )
     except DocumentConfigurationError as exc: raise HTTPException(status_code=503, detail={"code":"groq_unavailable", "message":"Groq is not configured"}) from exc
     except DocumentProviderError as exc: raise HTTPException(status_code=503, detail={"code":"groq_unavailable", "message":"Groq request failed"}) from exc
 

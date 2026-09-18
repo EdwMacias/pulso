@@ -235,9 +235,20 @@ class DocumentQuestionIn(BaseModel):
     question: str = Field(min_length=1, max_length=4_000)
 
 
+class DocumentSourceOut(BaseModel):
+    chunk_index: int
+    page_number: int
+    score: float
+    matched_terms: list[str]
+    content: str
+
+
 class DocumentAnswerOut(BaseModel):
     answer: str
     source_pages: list[int]
+    sources: list[DocumentSourceOut]
+    total_chunks: int
+    retrieval: str = "bm25"
 
 
 class NotificationOut(BaseModel):

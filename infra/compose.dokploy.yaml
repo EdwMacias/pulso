@@ -38,6 +38,9 @@ services:
       WHATSAPP_INSTANCE: ${WHATSAPP_INSTANCE:?Define the connected Evolution instance}
       WHATSAPP_WEBHOOK_SECRET: ${WHATSAPP_WEBHOOK_SECRET:?Define a random webhook secret of at least 32 characters}
       WHATSAPP_WORKER_POLL_SECONDS: ${WHATSAPP_WORKER_POLL_SECONDS:-2}
+      DOCUMENT_STORAGE_PATH: /app/data/documents
+    volumes:
+      - app_data:/app/data
     depends_on:
       db: { condition: service_healthy }
     healthcheck:
@@ -71,3 +74,4 @@ services:
     restart: unless-stopped
 volumes:
   postgres_data:
+  app_data:
