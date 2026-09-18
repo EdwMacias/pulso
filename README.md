@@ -65,6 +65,13 @@ El **Asistente** (web y WhatsApp) también usa RAG: dispone de las herramientas
 `list_documents` y `search_documents`, que recuperan con BM25 los fragmentos de
 todos los PDFs listos del usuario, y responde citando documento y página.
 
+**Tareas desde documentos** (`backend/app/document_tasks.py`): al subir un PDF,
+o con el botón «Extraer tareas», Groq propone pendientes en JSON (vuelos,
+citas, plazos, facturas) con página y cita literal de origen. Las facturas a
+crédito se marcan como cobro (venta) o pago (compra), con emisor, cliente,
+valor y vencimiento; el usuario puede invertir la clasificación. Nada se guarda
+hasta confirmar; al agregar se crean las tareas y sus recordatorios futuros.
+
 La interfaz muestra el recorrido y cada fuente recuperada con su página,
 puntuación BM25 y términos resaltados. Los PDFs se guardan en
 `DOCUMENT_STORAGE_PATH` (en Docker, el volumen `app_data`).

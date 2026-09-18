@@ -6,8 +6,10 @@ from .database import get_db
 from .dependencies import current_user, require_csrf
 from .document_service import (DocumentConfigurationError, DocumentProviderError,
     DocumentValidationError, answer_document_question, create_document, delete_document_file)
+from .document_tasks import create_document_tasks, extract_task_suggestions
 from .models import Document, User
-from .schemas import DocumentAnswerOut, DocumentDetailOut, DocumentOut, DocumentQuestionIn, DocumentSourceOut
+from .schemas import (DocumentAnswerOut, DocumentDetailOut, DocumentOut, DocumentQuestionIn, DocumentSourceOut,
+    DocumentTasksIn, DocumentTasksOut, TaskSuggestionsOut)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -45,6 +47,21 @@ def ask_document(document_id: str, payload: DocumentQuestionIn, user: User = Dep
         )
     except DocumentConfigurationError as exc: raise HTTPException(status_code=503, detail={"code":"groq_unavailable", "message":"Groq is not configured"}) from exc
     except DocumentProviderError as exc: raise HTTPException(status_code=503, detail={"code":"groq_unavailable", "message":"Groq request failed"}) from exc
+
+@router.post("/{document_id}/task-suggestions", response_model=TaskSuggestionsOut)
+def suggest_document_tasks(document_id: str, user: User = Depends(require_csrf), db: Session = Depends(get_db)):
+    document = _owned(db, user, document_id)
+    if document.status != "ready": raise HTTPException(status_code=409, detail="Document is not ready")
+    try:
+        return TaskSuggestionsOut(suggestions=extract_task_suggestions(db, user, document))
+    except DocumentConfigurationError as exc: raise HTTPException(status_code=503, detail={"code":"groq_unavailable", "message":"Groq is not configured"}) from exc
+    except DocumentProviderError as exc: raise HTTPException(status_code=503, detail={"code":"groq_unavailable", "message":"Groq request failed"}) from exc
+
+@router.post("/{document_id}/tasks", response_model=DocumentTasksOut, status_code=status.HTTP_201_CREATED)
+def add_document_tasks(document_id: str, payload: DocumentTasksIn, user: User = Depends(require_csrf), db: Session = Depends(get_db)):
+    document = _owned(db, user, document_id)
+    tasks, reminders = create_document_tasks(db, user, document, payload.tasks)
+    return DocumentTasksOut(created_tasks=tasks, created_reminders=reminders)
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_document(document_id: str, user: User = Depends(require_csrf), db: Session = Depends(get_db)):

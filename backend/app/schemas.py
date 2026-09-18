@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import Enum
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -249,6 +249,41 @@ class DocumentAnswerOut(BaseModel):
     sources: list[DocumentSourceOut]
     total_chunks: int
     retrieval: str = "bm25"
+
+
+class TaskSuggestion(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2_000)
+    priority: Priority = Priority.medium
+    kind: Literal["general", "cobro", "pago"] = "general"
+    invoice_number: str | None = Field(default=None, max_length=60)
+    issuer: str | None = Field(default=None, max_length=200)
+    customer: str | None = Field(default=None, max_length=200)
+    amount: str | None = Field(default=None, max_length=60)
+    due_date: date | None = None
+    remind_at: datetime | None = None
+    page: int | None = Field(default=None, ge=1)
+    evidence: str | None = Field(default=None, max_length=500)
+
+    @field_validator("remind_at")
+    @classmethod
+    def require_offset(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("remind_at must include a UTC offset")
+        return value
+
+
+class TaskSuggestionsOut(BaseModel):
+    suggestions: list[TaskSuggestion]
+
+
+class DocumentTasksIn(BaseModel):
+    tasks: list[TaskSuggestion] = Field(min_length=1, max_length=20)
+
+
+class DocumentTasksOut(BaseModel):
+    created_tasks: int
+    created_reminders: int
 
 
 class NotificationOut(BaseModel):

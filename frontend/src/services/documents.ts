@@ -19,3 +19,18 @@ export const listDocuments = () => api<DocumentItem[]>('/documents')
 export async function uploadDocument(file: File) { const form = new FormData(); form.append('file', file); return api<DocumentItem>('/documents', { method: 'POST', body: form }) }
 export const askDocument = (id: string, question: string) => api<DocumentAnswer>(`/documents/${id}/questions`, { method: 'POST', body: JSON.stringify({ question }) })
 export const deleteDocument = (id: string) => api<void>(`/documents/${id}`, { method: 'DELETE' })
+
+export type InvoiceKind = 'cobro' | 'pago'
+export type TaskSuggestion = {
+  title: string; description: string | null; priority: 'low' | 'medium' | 'high'; remind_at: string | null
+  page: number | null; evidence: string | null; kind: 'general' | InvoiceKind
+  invoice_number: string | null; issuer: string | null; customer: string | null; amount: string | null; due_date: string | null
+}
+export const suggestDocumentTasks = (id: string) => api<{ suggestions: TaskSuggestion[] }>(`/documents/${id}/task-suggestions`, { method: 'POST' })
+export const addDocumentTasks = (id: string, tasks: TaskSuggestion[]) => api<{ created_tasks: number; created_reminders: number }>(`/documents/${id}/tasks`, { method: 'POST', body: JSON.stringify({ tasks }) })
+
+// Al cambiar entre cobro y pago cambia el verbo y la contraparte: cobro al cliente, pago al emisor.
+export function invoiceTitle(suggestion: TaskSuggestion, kind: InvoiceKind) {
+  const counterparty = kind === 'cobro' ? suggestion.customer : suggestion.issuer
+  return [kind === 'cobro' ? 'Cobrar factura' : 'Pagar factura', suggestion.invoice_number, counterparty && `a ${counterparty}`].filter(Boolean).join(' ')
+}
