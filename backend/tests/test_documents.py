@@ -1,3 +1,6 @@
+import uuid
+
+
 def test_document_chunks_belong_to_the_document_in_order(client, registered):
     from app.database import session_scope
     from app.models import Document, DocumentChunk
@@ -90,7 +93,7 @@ def _ready_document(user_id: str, contents: list[tuple[int, str]]) -> str:
     from app.models import Document, DocumentChunk
 
     with session_scope() as db:
-        document = Document(user_id=user_id, original_name="manual.pdf", storage_name="manual-opaque.pdf",
+        document = Document(user_id=user_id, original_name="manual.pdf", storage_name=f"{uuid.uuid4()}.pdf",
             size_bytes=10, page_count=len(contents), status="ready")
         db.add(document)
         db.flush()
@@ -153,4 +156,68 @@ def test_question_without_matches_skips_the_model(client, registered, csrf_heade
     assert response.status_code == 200
     assert response.json()["answer"] == document_service.NO_CONTEXT_ANSWER
     assert response.json()["sources"] == []
+    get_settings.cache_clear()
+
+
+def test_document_search_only_reads_own_ready_documents(client, registered):
+    from types import SimpleNamespace
+
+    from app.database import session_scope
+    from app.document_service import search_user_documents
+    from tests.conftest import register
+
+    ada_id = registered["user"]["id"]
+    eve_id = register(client, "eve@example.com").json()["user"]["id"]
+    _ready_document(ada_id, [(3, "El reembolso de viáticos se solicita en diez días.")])
+    _ready_document(eve_id, [(1, "Viáticos secretos de otra persona.")])
+
+    with session_scope() as db:
+        results = search_user_documents(db, SimpleNamespace(id=ada_id), "viáticos")
+
+    assert [(item["document"], item["page"]) for item in results] == [("manual.pdf", 3)]
+    assert "secretos" not in results[0]["content"]
+
+
+def test_assistant_answers_from_documents_with_search_tool(client, registered, csrf_headers, monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    from app.config import get_settings
+
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    get_settings.cache_clear()
+    _ready_document(registered["user"]["id"], [
+        (1, "Bienvenida y organigrama."),
+        (7, "El reembolso de viáticos se solicita en un plazo de diez días."),
+    ])
+    tool_results = []
+
+    class ToolMessage(SimpleNamespace):
+        def model_dump(self, **_kwargs):
+            return {"role": "assistant", "tool_calls": []}
+
+    class Completions:
+        def create(self, **kwargs):
+            tools = {tool["function"]["name"] for tool in kwargs["tools"]}
+            assert "search_documents" in tools
+            if kwargs["messages"][-1]["role"] != "tool":
+                call = SimpleNamespace(id="call-1", function=SimpleNamespace(
+                    name="search_documents", arguments='{"query":"plazo reembolso viáticos"}'))
+                return SimpleNamespace(choices=[SimpleNamespace(message=ToolMessage(tool_calls=[call], content=None))])
+            tool_results.append(json.loads(kwargs["messages"][-1]["content"]))
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
+                tool_calls=None, content="Tienes diez días (manual.pdf, pág. 7)."))])
+
+    class FakeGroq:
+        def __init__(self, **_kwargs):
+            self.chat = SimpleNamespace(completions=Completions())
+
+    monkeypatch.setattr("app.chat_service.Groq", FakeGroq)
+    response = client.post("/api/v1/chat/messages", headers=csrf_headers,
+        json={"content": "¿Cuál es el plazo para el reembolso de viáticos?"})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["content"] == "Tienes diez días (manual.pdf, pág. 7)."
+    fragments = tool_results[0]["fragments"]
+    assert [(item["document"], item["page"]) for item in fragments] == [("manual.pdf", 7)]
     get_settings.cache_clear()

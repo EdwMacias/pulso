@@ -53,6 +53,30 @@ def select_context(ranked: list[ScoredChunk], max_chars: int) -> list[ScoredChun
     return selected
 
 
+def search_user_documents(db: Session, user: User, query: str) -> list[dict]:
+    """Recupera fragmentos relevantes de todos los documentos listos del usuario."""
+    settings = get_settings()
+    rows = db.execute(
+        select(DocumentChunk, Document.original_name)
+        .join(Document, Document.id == DocumentChunk.document_id)
+        .where(Document.user_id == user.id, Document.status == "ready")
+        .order_by(Document.created_at, DocumentChunk.chunk_index)
+    ).all()
+    names = {chunk.id: name for chunk, name in rows}
+    selected = select_context(rank_chunks([chunk for chunk, _ in rows], query), settings.document_max_context_chars)
+    return [
+        {
+            "document": names[item.chunk.id],
+            "document_id": item.chunk.document_id,
+            "page": item.chunk.page_number,
+            "fragment": item.chunk.chunk_index + 1,
+            "score": item.score,
+            "content": item.chunk.content,
+        }
+        for item in selected
+    ]
+
+
 def _chunks_for_page(text: str, page_number: int, start_index: int) -> list[DocumentChunk]:
     """Divide una página en fragmentos que se solapan para no cortar ideas."""
     words = re.sub(r"\s+", " ", text).strip().split(" ")

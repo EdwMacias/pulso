@@ -61,6 +61,10 @@ La sección **Documentos** implementa Retrieval-Augmented Generation:
 4. **Generación**: Groq responde citando páginas. Sin fragmentos relevantes no
    se consulta al modelo y se indica que el documento no contiene la respuesta.
 
+El **Asistente** (web y WhatsApp) también usa RAG: dispone de las herramientas
+`list_documents` y `search_documents`, que recuperan con BM25 los fragmentos de
+todos los PDFs listos del usuario, y responde citando documento y página.
+
 La interfaz muestra el recorrido y cada fuente recuperada con su página,
 puntuación BM25 y términos resaltados. Los PDFs se guardan en
 `DOCUMENT_STORAGE_PATH` (en Docker, el volumen `app_data`).
