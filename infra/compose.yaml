@@ -27,6 +27,7 @@ services:
       COOKIE_SECURE: 'false'
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_CHAT_MODEL: ${GROQ_CHAT_MODEL:-llama-3.3-70b-versatile}
+      CHAT_MODE: ${CHAT_MODE:-single}
       WHATSAPP_API_URL: ${WHATSAPP_API_URL:-}
       WHATSAPP_API_KEY: ${WHATSAPP_API_KEY:-}
       WHATSAPP_INSTANCE: ${WHATSAPP_INSTANCE:-}

@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,6 +31,7 @@ class Settings(BaseSettings):
     groq_api_key: str | None = None
     groq_chat_model: str = "llama-3.3-70b-versatile"
     groq_max_tool_calls: int = Field(default=6, ge=1, le=12)
+    chat_mode: Literal["single", "multi"] = "single"
     document_storage_path: Path = Path("document-storage")
     document_max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
     document_max_pages: int = Field(default=100, ge=1, le=1_000)
